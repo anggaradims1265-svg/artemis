@@ -1,0 +1,75 @@
+
+name: Build ARTEMIS
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_type:
+        description: "Build type"
+        required: true
+        default: "release"
+        type: choice
+        options:
+          - release
+          - test
+
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build ARTEMIS
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.22.3"
+          cache: npm
+          cache-dependency-path: apps/showcase_ui/package-lock.json
+
+      - name: Setup UV
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Install frontend dependencies
+        run: npm ci --prefix apps/showcase_ui
+
+      - name: Build frontend
+        run: npm run build --prefix apps/showcase_ui
+
+      - name: Install Python dependencies
+        run: uv sync --dev --locked
+
+      - name: Run tests
+        if: github.event.inputs.build_type == 'test'
+        run: uv run pytest -q
+
+      - name: Build ARTEMIS packages
+        run: |
+          uv build --package artemis-client --wheel --out-dir dist
+          uv build --package artemis --wheel --sdist --out-dir dist
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: artemis-build
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 14
+          
